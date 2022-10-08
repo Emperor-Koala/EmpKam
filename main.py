@@ -64,6 +64,7 @@ class FrameLoop(threading.Thread):
             image = Image.fromarray(image)
             imagetk = ImageTk.PhotoImage(image)
             self.label.configure(image=imagetk)
+            self.label.image = imagetk
 
             # buffer this frame
             self.buffer.write(cv2.imencode('.jpg', frame)[1].tobytes())
@@ -234,7 +235,7 @@ if __name__ == '__main__':
     label.configure(width=800, height=600)
     label.grid(row=0, column=0)
 
-    cap = cv2.VideoCapture(2)  # TODO allow user to switch active camera
+    cap = cv2.VideoCapture(0)  # TODO allow user to switch active camera
     frame_loop_thread = FrameLoop(cap, frame_buffer, label, settings.minimum_frame_delta)
     frame_loop_thread.start()
 
