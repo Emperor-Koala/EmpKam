@@ -2,6 +2,7 @@ import json
 import tkinter as tk
 import time
 from dataclasses import dataclass
+from typing import Tuple
 
 from PIL import Image, ImageTk
 import threading
@@ -12,6 +13,11 @@ from stream_handler import StreamingHandler
 from server_thread import ServerThread
 from int_entry import IntEntry
 import socket
+from find_devices import FindDevices
+import os
+from usb.core import find
+from usb.backend.libusb1 import get_backend
+import usb.util
 
 
 class FrameLoop(threading.Thread):
@@ -134,6 +140,12 @@ def save_settings(sett: Settings):
 def open_settings_screen(sett: Settings):
     settings_screen = tk.Toplevel()
     settings_screen.title('Settings')
+    # settings_screen.geometry('200x110')
+    settings_screen.grid_columnconfigure(0, weight=1, uniform='sett')
+    settings_screen.grid_columnconfigure(1, weight=1, uniform='sett')
+    settings_screen.grid_rowconfigure(0, weight=1)
+    settings_screen.grid_rowconfigure(1, weight=1)
+    settings_screen.grid_rowconfigure(2, weight=1)
     settings_screen.resizable(False, False)
 
     def validate_fields():
@@ -151,7 +163,7 @@ def open_settings_screen(sett: Settings):
             save_btn.configure(state="normal")
 
     # port label
-    tk.Label(settings_screen, text='Port:').grid(row=0, column=0, pady=5, sticky="E")
+    tk.Label(settings_screen, text='Port:', anchor='e', width=12).grid(row=0, column=0, pady=5, padx=(5, 0))
 
     port_field = IntEntry(settings_screen, width=10, on_edit=validate_fields, initial_value=settings.server_port)
     port_field.grid(row=0, column=1, padx=5, pady=5, sticky='NESW')
@@ -159,11 +171,11 @@ def open_settings_screen(sett: Settings):
     frame_rate = int(float(1/sett.minimum_frame_delta))
 
     # frame rate label
-    tk.Label(settings_screen, text='Max Frame Rate:', anchor='e', width=12).grid(row=1, column=0, pady=5)
+    tk.Label(settings_screen, text='Max Frame Rate:', anchor='e', width=12).grid(row=1, column=0, pady=5, padx=(5, 0))
 
     frame_rate_field = IntEntry(settings_screen, width=10)
     frame_rate_field.insert(0, str(frame_rate))
-    frame_rate_field.grid(row=1, column=1, padx=5, sticky='NESW')
+    frame_rate_field.grid(row=1, column=1, padx=5, pady=5, sticky='NESW')
 
     # TODO active webcam selector
 
@@ -211,7 +223,23 @@ def on_close():
     root.after(int(settings.minimum_frame_delta * 1000) + 10, root.destroy)
 
 
+# TODO Temporary
+def find_backend_library(x):
+    return 'libusb\libusb-1.0.dll'
+
+
+os.environ['PYUSB_DEBUG']="debug"
 if __name__ == '__main__':
+
+    backend = get_backend(find_library=find_backend_library)
+    devices = find(find_all=1, custom_match=FindDevices([0x0E, 0x10]), backend=backend)
+    device = list(devices)[0]
+    print(device)
+    # print(usb.util.get_string(camera, 5, 0x0000))
+    # available_cameras: list[Tuple[int, str]] = []
+    
+    # for camera in list(cameras):
+    #     print(camera.bNumConfigurations)
 
     max_image_width = 800
     max_image_height = 600
