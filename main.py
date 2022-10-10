@@ -2,15 +2,15 @@ import json
 import tkinter as tk
 from tkinter import ttk
 from dataclasses import dataclass
+import socket
 
 from PIL import Image, ImageTk
 import cv2
+from pygrabber.dshow_graph import FilterGraph
 from frame_buffer import FrameBuffer
 from stream_handler import StreamingHandler
 from server_thread import ServerThread
 from int_entry import IntEntry
-import socket
-from pygrabber.dshow_graph import FilterGraph
 from frame_loop import FrameLoop
 
 
