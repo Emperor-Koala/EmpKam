@@ -1,1 +1,1 @@
-{"server_port": 8000, "minimum_frame_delta": 0.25}
+{"server_port": 8000, "minimum_frame_delta": 0.03333333333333333, "capture_device": "Webcam C110"}

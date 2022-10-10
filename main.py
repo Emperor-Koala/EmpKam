@@ -1,5 +1,6 @@
 import json
 import tkinter as tk
+from tkinter import ttk
 import time
 from dataclasses import dataclass
 from typing import Tuple
@@ -13,11 +14,7 @@ from stream_handler import StreamingHandler
 from server_thread import ServerThread
 from int_entry import IntEntry
 import socket
-from find_devices import FindDevices
-import os
-from usb.core import find
-from usb.backend.libusb1 import get_backend
-import usb.util
+from pygrabber.dshow_graph import FilterGraph
 
 
 class FrameLoop(threading.Thread):
@@ -39,19 +36,25 @@ class FrameLoop(threading.Thread):
         self.label = tk_label
         self.minimum_frame_delta = minimum_frame_delta
         self.cancel = threading.Event()
+        self.paused = False
         super().__init__(*args, **kwargs)
 
     def run(self) -> None:
         while not self.cancel.is_set():
+            while self.paused:
+                pass
             frame_start = time.time()
 
             # Capture the video frame
             # by frame
             ret, frame = self.cap.read()
 
-            if not ret:
+            if not ret and not self.paused:
                 print("Can't receive frame (stream end?). Exiting ...")
                 break
+
+            if self.paused:
+                continue
 
             # scale frame to fit
             if self.aspect > 1:
@@ -79,8 +82,9 @@ class FrameLoop(threading.Thread):
             while (time.time() - frame_start) < self.minimum_frame_delta:
                 pass
 
-    def update_cap(self, new_cap):
-        self.cap = new_cap
+    def update_cap(self, new_cap_index):
+        self.paused = True
+        self.cap = cv2.VideoCapture(new_cap_index)
         ret, frame = self.cap.read()
         if ret:
             h, w = frame.shape[:2]
@@ -93,6 +97,7 @@ class FrameLoop(threading.Thread):
         else:
             self.aspect = 4 / 3  # default to 4/3 ratio
             self.interp = cv2.INTER_LINEAR  # default to linear scaling?
+        self.paused = False
 
 
 def toggle_server():
@@ -126,6 +131,7 @@ def toggle_server():
 class Settings:
     server_port: int
     minimum_frame_delta: float
+    capture_device: str
     updated: bool = False
 
 
@@ -133,14 +139,14 @@ def save_settings(sett: Settings):
     with open('./empkam_settings.json', 'w') as file:
         json.dump({
             'server_port': sett.server_port,
-            'minimum_frame_delta': sett.minimum_frame_delta
+            'minimum_frame_delta': sett.minimum_frame_delta,
+            'capture_device': sett.capture_device
         }, file)
 
 
 def open_settings_screen(sett: Settings):
     settings_screen = tk.Toplevel()
     settings_screen.title('Settings')
-    # settings_screen.geometry('200x110')
     settings_screen.grid_columnconfigure(0, weight=1, uniform='sett')
     settings_screen.grid_columnconfigure(1, weight=1, uniform='sett')
     settings_screen.grid_rowconfigure(0, weight=1)
@@ -177,7 +183,20 @@ def open_settings_screen(sett: Settings):
     frame_rate_field.insert(0, str(frame_rate))
     frame_rate_field.grid(row=1, column=1, padx=5, pady=5, sticky='NESW')
 
-    # TODO active webcam selector
+    tk.Label(settings_screen, text='Camera:', anchor='e', width=12).grid(row=2, column=0, pady=5, padx=(5, 0))
+
+    def update_selected_camera(_):
+        cam_index_var.set(available_devices[(camera_var.get())])
+        frame_loop_thread.update_cap(cam_index_var.get())
+        sett.capture_device = camera_var.get()
+        save_settings(sett)
+
+    camera_var = tk.StringVar()
+    cam_index_var = tk.IntVar()
+    camera_field = ttk.Combobox(settings_screen, values=list(available_devices.keys()), textvariable=camera_var)
+    camera_field.grid(row=2, column=1, padx=5, pady=5, sticky='NESW')
+    camera_field.current(list(available_devices.keys()).index(sett.capture_device))
+    camera_field.bind("<<ComboboxSelected>>", update_selected_camera)
 
     # save and cancel buttons
     tk.Button(
@@ -223,23 +242,18 @@ def on_close():
     root.after(int(settings.minimum_frame_delta * 1000) + 10, root.destroy)
 
 
-# TODO Temporary
-def find_backend_library(x):
-    return 'libusb\libusb-1.0.dll'
-
-
-os.environ['PYUSB_DEBUG']="debug"
 if __name__ == '__main__':
 
-    backend = get_backend(find_library=find_backend_library)
-    devices = find(find_all=1, custom_match=FindDevices([0x0E, 0x10]), backend=backend)
-    device = list(devices)[0]
-    print(device)
-    # print(usb.util.get_string(camera, 5, 0x0000))
-    # available_cameras: list[Tuple[int, str]] = []
-    
-    # for camera in list(cameras):
-    #     print(camera.bNumConfigurations)
+    graph = FilterGraph()
+    available_devices: dict[str, int] = {}
+    for index, dev_name in enumerate(graph.get_input_devices()):
+        if dev_name == 'OBS Virtual Camera':
+            continue
+        available_devices[dev_name] = index
+
+    if len(available_devices) == 0:
+        print('No valid cameras found!')
+        exit(-1)
 
     max_image_width = 800
     max_image_height = 600
@@ -249,8 +263,11 @@ if __name__ == '__main__':
         with open('./empkam_settings.json', 'r') as settings_file:
             settings_dict = json.load(settings_file)
             settings = Settings(**settings_dict)
+            if settings.capture_device not in available_devices.keys():
+                settings.capture_device = list(available_devices.keys())[0]
+                save_settings(settings)
     except FileNotFoundError:
-        settings = Settings(server_port=8000, minimum_frame_delta=0.1)
+        settings = Settings(server_port=8000, minimum_frame_delta=0.1, capture_device=list(available_devices.keys())[0])
         save_settings(settings)
 
     active_socket = None
@@ -263,7 +280,7 @@ if __name__ == '__main__':
     label.configure(width=800, height=600)
     label.grid(row=0, column=0)
 
-    cap = cv2.VideoCapture(0)  # TODO allow user to switch active camera
+    cap = cv2.VideoCapture(available_devices[settings.capture_device])
     frame_loop_thread = FrameLoop(cap, frame_buffer, label, settings.minimum_frame_delta)
     frame_loop_thread.start()
 
