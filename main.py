@@ -1,103 +1,17 @@
 import json
 import tkinter as tk
 from tkinter import ttk
-import time
 from dataclasses import dataclass
-from typing import Tuple
 
 from PIL import Image, ImageTk
-import threading
 import cv2
-import numpy as np
 from frame_buffer import FrameBuffer
 from stream_handler import StreamingHandler
 from server_thread import ServerThread
 from int_entry import IntEntry
 import socket
 from pygrabber.dshow_graph import FilterGraph
-
-
-class FrameLoop(threading.Thread):
-    def __init__(self, capture, buffer: FrameBuffer, tk_label: tk.Label, minimum_frame_delta: float, *args, **kwargs):
-        self.cap = capture
-        ret, frame = self.cap.read()
-        if ret:
-            h, w = frame.shape[:2]
-            self.aspect = w / h
-            # interpolation method
-            if h > max_image_height or w > max_image_width:  # shrinking image
-                self.interp = cv2.INTER_AREA
-            else:  # stretching image
-                self.interp = cv2.INTER_CUBIC
-        else:
-            self.aspect = 4 / 3  # default to 4/3 ratio
-            self.interp = cv2.INTER_LINEAR  # default to linear scaling?
-        self.buffer = buffer
-        self.label = tk_label
-        self.minimum_frame_delta = minimum_frame_delta
-        self.cancel = threading.Event()
-        self.paused = False
-        super().__init__(*args, **kwargs)
-
-    def run(self) -> None:
-        while not self.cancel.is_set():
-            while self.paused:
-                pass
-            frame_start = time.time()
-
-            # Capture the video frame
-            # by frame
-            ret, frame = self.cap.read()
-
-            if not ret and not self.paused:
-                print("Can't receive frame (stream end?). Exiting ...")
-                break
-
-            if self.paused:
-                continue
-
-            # scale frame to fit
-            if self.aspect > 1:
-                scaled_width = max_image_width
-                scaled_height = np.round(scaled_width/self.aspect).astype(int)
-            elif self.aspect < 1:
-                scaled_height = max_image_height
-                scaled_width = np.round(scaled_height * self.aspect).astype(int)
-            else:
-                scaled_height = max_image_height
-                scaled_width = scaled_height
-            image = cv2.resize(frame, (scaled_width, scaled_height), self.interp)
-
-            # Display the resulting frame
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = Image.fromarray(image)
-            imagetk = ImageTk.PhotoImage(image)
-            self.label.configure(image=imagetk)
-            self.label.image = imagetk
-
-            # buffer this frame
-            self.buffer.write(cv2.imencode('.jpg', frame)[1].tobytes())
-
-            # print(time.time()-frame_start)
-            while (time.time() - frame_start) < self.minimum_frame_delta:
-                pass
-
-    def update_cap(self, new_cap_index):
-        self.paused = True
-        self.cap = cv2.VideoCapture(new_cap_index)
-        ret, frame = self.cap.read()
-        if ret:
-            h, w = frame.shape[:2]
-            self.aspect = w / h
-            # interpolation method
-            if h > max_image_height or w > max_image_width:  # shrinking image
-                self.interp = cv2.INTER_AREA
-            else:  # stretching image
-                self.interp = cv2.INTER_CUBIC
-        else:
-            self.aspect = 4 / 3  # default to 4/3 ratio
-            self.interp = cv2.INTER_LINEAR  # default to linear scaling?
-        self.paused = False
+from frame_loop import FrameLoop
 
 
 def toggle_server():
@@ -169,21 +83,25 @@ def open_settings_screen(sett: Settings):
             save_btn.configure(state="normal")
 
     # port label
-    tk.Label(settings_screen, text='Port:', anchor='e', width=12).grid(row=0, column=0, pady=5, padx=(5, 0))
+    tk.Label(settings_screen, text='Port:', anchor='e', width=12).grid(
+        row=0, column=0, pady=5, padx=(5, 0))
 
-    port_field = IntEntry(settings_screen, width=10, on_edit=validate_fields, initial_value=settings.server_port)
+    port_field = IntEntry(settings_screen, width=10,
+                          on_edit=validate_fields, initial_value=settings.server_port)
     port_field.grid(row=0, column=1, padx=5, pady=5, sticky='NESW')
 
     frame_rate = int(float(1/sett.minimum_frame_delta))
 
     # frame rate label
-    tk.Label(settings_screen, text='Max Frame Rate:', anchor='e', width=12).grid(row=1, column=0, pady=5, padx=(5, 0))
+    tk.Label(settings_screen, text='Max Frame Rate:', anchor='e',
+             width=12).grid(row=1, column=0, pady=5, padx=(5, 0))
 
     frame_rate_field = IntEntry(settings_screen, width=10)
     frame_rate_field.insert(0, str(frame_rate))
     frame_rate_field.grid(row=1, column=1, padx=5, pady=5, sticky='NESW')
 
-    tk.Label(settings_screen, text='Camera:', anchor='e', width=12).grid(row=2, column=0, pady=5, padx=(5, 0))
+    tk.Label(settings_screen, text='Camera:', anchor='e',
+             width=12).grid(row=2, column=0, pady=5, padx=(5, 0))
 
     def update_selected_camera(_):
         cam_index_var.set(available_devices[(camera_var.get())])
@@ -193,9 +111,11 @@ def open_settings_screen(sett: Settings):
 
     camera_var = tk.StringVar()
     cam_index_var = tk.IntVar()
-    camera_field = ttk.Combobox(settings_screen, values=list(available_devices.keys()), textvariable=camera_var)
+    camera_field = ttk.Combobox(settings_screen, values=list(
+        available_devices.keys()), textvariable=camera_var)
     camera_field.grid(row=2, column=1, padx=5, pady=5, sticky='NESW')
-    camera_field.current(list(available_devices.keys()).index(sett.capture_device))
+    camera_field.current(list(available_devices.keys()
+                              ).index(sett.capture_device))
     camera_field.bind("<<ComboboxSelected>>", update_selected_camera)
 
     # save and cancel buttons
@@ -267,7 +187,8 @@ if __name__ == '__main__':
                 settings.capture_device = list(available_devices.keys())[0]
                 save_settings(settings)
     except FileNotFoundError:
-        settings = Settings(server_port=8000, minimum_frame_delta=0.1, capture_device=list(available_devices.keys())[0])
+        settings = Settings(server_port=8000, minimum_frame_delta=0.1,
+                            capture_device=list(available_devices.keys())[0])
         save_settings(settings)
 
     active_socket = None
@@ -281,21 +202,31 @@ if __name__ == '__main__':
     label.grid(row=0, column=0)
 
     cap = cv2.VideoCapture(available_devices[settings.capture_device])
-    frame_loop_thread = FrameLoop(cap, frame_buffer, label, settings.minimum_frame_delta)
+    frame_loop_thread = FrameLoop(
+        cap,
+        frame_buffer,
+        label,
+        settings.minimum_frame_delta,
+        (max_image_width, max_image_height),
+    )
     frame_loop_thread.start()
 
     lower_pane = tk.Frame()
 
-    inactive_status_img = ImageTk.PhotoImage(Image.open('./serv_status/inactive.png').resize((160, 40)))
-    active_status_img = ImageTk.PhotoImage(Image.open('./serv_status/active.png').resize((160, 40)))
+    inactive_status_img = ImageTk.PhotoImage(Image.open(
+        './serv_status/inactive.png').resize((160, 40)))
+    active_status_img = ImageTk.PhotoImage(Image.open(
+        './serv_status/active.png').resize((160, 40)))
 
     serv_status = tk.Label(lower_pane, image=inactive_status_img, height=50)
     serv_status.grid(row=0, column=0)
 
-    serv_toggle = tk.Button(lower_pane, command=toggle_server, text="Start Server")
+    serv_toggle = tk.Button(
+        lower_pane, command=toggle_server, text="Start Server")
     serv_toggle.grid(row=1, column=0, padx=25)
 
-    settings_btn = tk.Button(lower_pane, text="Settings...", command=lambda: open_settings_screen(settings))
+    settings_btn = tk.Button(
+        lower_pane, text="Settings...", command=lambda: open_settings_screen(settings))
     settings_btn.grid(row=1, column=1, padx=25)
 
     lower_pane.grid(row=1, column=0)
@@ -305,4 +236,3 @@ if __name__ == '__main__':
     root.geometry(f"{max_image_width}x{max_image_height + 100}")
     root.resizable(False, False)
     root.mainloop()
-    pass
