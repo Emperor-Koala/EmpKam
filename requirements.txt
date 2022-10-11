@@ -3,3 +3,4 @@ numpy==1.23.3
 opencv-python-headless==4.6.0.66
 Pillow==9.2.0
 pygrabber==0.1
+pyobjc==8.5.1

@@ -1,4 +1,5 @@
 import json
+import platform
 import tkinter as tk
 from tkinter import ttk
 from dataclasses import dataclass
@@ -6,7 +7,6 @@ import socket
 
 from PIL import Image, ImageTk
 import cv2
-from pygrabber.dshow_graph import FilterGraph
 from frame_buffer import FrameBuffer
 from stream_handler import StreamingHandler
 from server_thread import ServerThread
@@ -163,13 +163,35 @@ def on_close():
 
 
 if __name__ == '__main__':
-
-    graph = FilterGraph()
     available_devices: dict[str, int] = {}
-    for index, dev_name in enumerate(graph.get_input_devices()):
-        if dev_name == 'OBS Virtual Camera':
-            continue
-        available_devices[dev_name] = index
+
+    if platform.system() == 'Darwin':
+        import AVFoundation
+        session = AVFoundation.AVCaptureDeviceDiscoverySession.discoverySessionWithDeviceTypes_mediaType_position_(
+            [
+                AVFoundation.AVCaptureDeviceTypeBuiltInWideAngleCamera,
+                AVFoundation.AVCaptureDeviceTypeBuiltInUltraWideCamera,
+                AVFoundation.AVCaptureDeviceTypeBuiltInTelephotoCamera,
+                AVFoundation.AVCaptureDeviceTypeBuiltInDualCamera,
+                AVFoundation.AVCaptureDeviceTypeBuiltInDualWideCamera,
+                AVFoundation.AVCaptureDeviceTypeBuiltInTripleCamera,
+                AVFoundation.AVCaptureDeviceTypeExternalUnknown,
+            ],
+            AVFoundation.AVMediaTypeVideo,
+            AVFoundation.AVCaptureDevicePositionUnspecified
+        )
+        for index, device in enumerate(session.devices()):
+            dev_name = device.localizedName()
+            if dev_name == 'OBS Virtual Camera':
+                continue
+            available_devices[dev_name] = index
+    else:
+        from pygrabber.dshow_graph import FilterGraph
+        graph = FilterGraph()
+        for index, dev_name in enumerate(graph.get_input_devices()):
+            if dev_name == 'OBS Virtual Camera':
+                continue
+            available_devices[dev_name] = index
 
     if len(available_devices) == 0:
         print('No valid cameras found!')
